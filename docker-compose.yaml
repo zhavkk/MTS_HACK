@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./chat_api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./chat_api/app:/app/app
+
+  frontend:
+    build: ./front
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
