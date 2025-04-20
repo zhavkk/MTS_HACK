@@ -1,50 +1,66 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from ..schemas import SessionComplete,SessionCreate,MessageRequest
+from fastapi import APIRouter, HTTPException
+from ..models import MessageRequest, SessionResponse
+from ..schemas import SessionCreate, SessionData, CallbackRequest
 from ..services.message_buffer import MessageBuffer
-from ..services.agent_client import AgentClient
 
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter()
+message_buffer = MessageBuffer()
 
-buffer_service = MessageBuffer()
-agent_client = AgentClient()
-
-@router.post("", response_model=dict)
+@router.post("/sessions", response_model=SessionResponse)
 async def create_session():
-    session_id = buffer_service.create_session()
-    return {"session_id": session_id}
+    """Create a new session."""
+    try:
+        session_id = message_buffer.create_session()
+        return SessionResponse(session_id=session_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{session_id}/messages")
-async def add_message(
-    session_id: str,
-    message: MessageRequest,
-    bg_tasks: BackgroundTasks
-):
-    if not buffer_service.session_exists(session_id):
-        raise HTTPException(404, "Session not found")
-    
-    bg_tasks.add_task(
-        buffer_service.add_message,
-        session_id,
-        message.content
-    )
-    
-    return {"status": "processing"}
+@router.post("/sessions/{session_id}/messages")
+async def add_message(session_id: str, message: MessageRequest):
+    """Add a message to the session."""
+    try:
+        await message_buffer.add_message(session_id, message.content, message.role)
+        return {"status": "success"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{session_id}/complete")
-async def complete_session(
-    session_id: str,
-    data: SessionComplete
-):
-    if not buffer_service.session_exists(session_id):
-        raise HTTPException(404, "Session not found")
-    
-    dialog_data = buffer_service.get_session_data(session_id)
-    dialog_data["operator_notes"] = data.operator_notes
-    
-    # Отправка в CRM
-    await agent_client.send_to_crm(dialog_data)
-    
-    # Очистка буфера
-    buffer_service.delete_session(session_id)
-    
-    return {"status": "completed"}
+@router.get("/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Get session data including messages and recommendations."""
+    if not message_buffer.session_exists(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return message_buffer.get_session_data(session_id)
+
+@router.post("/sessions/{session_id}/complete")
+async def complete_session(session_id: str):
+    """Complete the session."""
+    try:
+        result = await message_buffer.complete_session(session_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/callback")
+async def handle_callback(callback: CallbackRequest):
+    """Handle recommendation service callback."""
+    try:
+        message_buffer.add_recommendation(callback.session_id, callback.recommendation.dict())
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sessions/{session_id}/updates", response_model=SessionData)
+async def get_updates(session_id: str):
+    """Get session updates including messages and recommendations."""
+    try:
+        if not message_buffer.session_exists(session_id):
+            raise HTTPException(status_code=404, detail="Session not found")
+        return message_buffer.get_session_data(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

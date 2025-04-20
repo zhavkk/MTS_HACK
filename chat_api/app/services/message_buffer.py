@@ -1,47 +1,105 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 import uuid
+import random
+from .agent_client import AgentClient
 
 class MessageBuffer:
     def __init__(self):
-        self.sessions = defaultdict(dict)
-        self.timeout = 10  
+        self.sessions = defaultdict(lambda: {
+            "messages": [],
+            "recommendations": [],
+            "last_update": datetime.now(),
+            "client_id": None,
+            "buffer_timer": None
+        })
+        self.BUFFER_TIMEOUT = 5  # 5 seconds buffer
+        self.agent_client = AgentClient()
 
-    def create_session(self):
+    def session_exists(self, session_id: str) -> bool:
+        """Check if session exists."""
+        return session_id in self.sessions
+
+    def create_session(self) -> str:
+        """Create a new session with a random client ID."""
         session_id = str(uuid.uuid4())
+        client_id = str(random.randint(0, 2000))
+        
         self.sessions[session_id] = {
             "messages": [],
             "recommendations": [],
-            "created_at": datetime.now(),
-            "timer": None
+            "last_update": datetime.now(),
+            "client_id": client_id,
+            "buffer_timer": None
         }
         return session_id
 
-    async def add_message(self, session_id: str, message: str):
+    async def add_message(self, session_id: str, content: str, role: str = "operator") -> None:
+        """Add a message to the session buffer and process it."""
+        if session_id not in self.sessions:
+            raise ValueError(f"Session {session_id} not found")
+            
         session = self.sessions[session_id]
-        session["messages"].append({
-            "content": message,
-            "timestamp": datetime.now()
-        })
+        message = {
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now().isoformat()
+        }
+        session["messages"].append(message)
         
-        if session["timer"]:
-            session["timer"].cancel()
-        
-        session["timer"] = asyncio.create_task(
-            self._process_buffered(session_id)
-        )
+        if role == "user":
+            if session["client_id"] is None:
+                raise ValueError("Client ID is required for user messages")
+            
+            if not session["buffer_timer"]:
+                session["buffer_timer"] = asyncio.create_task(
+                    self._process_user_message(session_id, content)
+                )
+        else:  # operator message
+            await self.agent_client.send_operator_message(content)
 
-    async def _process_buffered(self, session_id: str):
-        await asyncio.sleep(self.timeout)
-        messages = self._get_messages(session_id)
-        recommendations = await agent_client.get_recommendations(messages)
-        
-        self.sessions[session_id]["recommendations"].extend(recommendations)
-        self.sessions[session_id]["timer"] = None
-
-    def _get_messages(self, session_id: str):
-        return [msg["content"] for msg in self.sessions[session_id]["messages"]]
+    async def _process_user_message(self, session_id: str, content: str):
+        """Process user message after buffer timeout."""
+        try:
+            await asyncio.sleep(self.BUFFER_TIMEOUT)
+            session = self.sessions[session_id]
+            await self.agent_client.send_user_message(session["client_id"], content)
+        finally:
+            session["buffer_timer"] = None
 
     def get_session_data(self, session_id: str):
-        return self.sessions[session_id]
+        """Get session data including messages and recommendations."""
+        if session_id not in self.sessions:
+            raise ValueError(f"Session {session_id} not found")
+            
+        session = self.sessions[session_id]
+        return {
+            "messages": session["messages"],
+            "recommendations": session["recommendations"],
+            "last_update": session["last_update"],
+            "client_id": session["client_id"]
+        }
+
+    async def complete_session(self, session_id: str) -> dict:
+        """Complete the session by sending client_id to recommendation service."""
+        if session_id not in self.sessions:
+            raise ValueError(f"Session {session_id} not found")
+            
+        session = self.sessions[session_id]
+        
+        if session["client_id"] is None:
+            raise ValueError("Cannot complete session without client ID")
+            
+        try:
+            await self.agent_client.complete_session(session["client_id"])
+            del self.sessions[session_id]
+            return {"status": "success", "message": "Session completed"}
+        except Exception as e:
+            raise ValueError(f"Failed to complete session: {str(e)}")
+
+    def add_recommendation(self, session_id: str, recommendation: dict):
+        """Add a recommendation to the session."""
+        if session_id in self.sessions:
+            self.sessions[session_id]["recommendations"].append(recommendation)
+            self.sessions[session_id]["last_update"] = datetime.now()
