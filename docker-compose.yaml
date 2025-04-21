@@ -7,8 +7,12 @@ services:
       - "8000:8000"
     environment:
       - PYTHONPATH=/app
+      - RECOMMENDATION_SERVICE_URL=http://service_orhestrator:8008/api/orhestrator/
+      - CALLBACK_URL=http://backend:8000/sessions/callback
     volumes:
       - ./chat_api/app:/app/app
+    depends_on:
+      - service_orhestrator
 
   frontend:
     build: ./front
@@ -16,3 +20,25 @@ services:
       - "8501:8501"
     depends_on:
       - backend
+
+  service_orhestrator:
+    build: ./service_orhestrator
+    ports:
+      - "8008:8008"
+    environment:
+      - DEBUG=True
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:

@@ -14,7 +14,7 @@ class MessageBuffer:
             "client_id": None,
             "buffer_timer": None
         })
-        self.BUFFER_TIMEOUT = 5  # 5 seconds buffer
+        self.BUFFER_TIMEOUT = 5 
         self.agent_client = AgentClient()
 
     def session_exists(self, session_id: str) -> bool:
@@ -39,6 +39,7 @@ class MessageBuffer:
         """Add a message to the session buffer and process it."""
         if session_id not in self.sessions:
             raise ValueError(f"Session {session_id} not found")
+        print(f"Adding message to session {session_id}: {content}")
             
         session = self.sessions[session_id]
         message = {
@@ -47,16 +48,19 @@ class MessageBuffer:
             "timestamp": datetime.now().isoformat()
         }
         session["messages"].append(message)
+        print(f"Message added to session {session_id}: {message}")
         
         if role == "user":
             if session["client_id"] is None:
                 raise ValueError("Client ID is required for user messages")
+            print(f"Client ID for session {session_id}: {session['client_id']}")
             
             if not session["buffer_timer"]:
                 session["buffer_timer"] = asyncio.create_task(
                     self._process_user_message(session_id, content)
                 )
-        else:  # operator message
+        else:  
+            print(f"Sending operator message to recommendation service: {content}")
             await self.agent_client.send_operator_message(content)
 
     async def _process_user_message(self, session_id: str, content: str):
@@ -64,7 +68,11 @@ class MessageBuffer:
         try:
             await asyncio.sleep(self.BUFFER_TIMEOUT)
             session = self.sessions[session_id]
-            await self.agent_client.send_user_message(session["client_id"], content)
+            user_messages = [
+                msg["content"] for msg in session["messages"] if msg["role"] =="user"
+            ]
+            full_text = " ".join(user_messages)
+            await self.agent_client.send_user_message(session["client_id"], full_text)
         finally:
             session["buffer_timer"] = None
 
@@ -90,7 +98,8 @@ class MessageBuffer:
         
         if session["client_id"] is None:
             raise ValueError("Cannot complete session without client ID")
-            
+        
+
         try:
             await self.agent_client.complete_session(session["client_id"])
             del self.sessions[session_id]

@@ -93,9 +93,24 @@ def send_operator_message(message):
             st.error(f"Ошибка отправки сообщения: {str(e)}")
     return False
 
-st.title("💬 Контакт-центр: интерфейс оператора")
+st.title("Интерфейс оператора")
 
 with st.sidebar:
+    #TODO: убрать айди сессии здесь
+    session_id = st.session_state.get('session_id', '')
+    st.write(f"ID сессии: {session_id if session_id else 'Нет'}")
+    if session_id:
+        st.code(session_id, language=None)
+        st.markdown(
+            f"""
+            <button onclick="navigator.clipboard.writeText('{session_id}')"
+                    style="padding:6px 12px; border-radius:4px; border:none; background:#1976d2; color:white; cursor:pointer;">
+                📋 Скопировать session_id
+            </button>
+            """,
+            unsafe_allow_html=True
+        )
+    ##
     if st.button("🔄 Принудительное обновление"):
         fetch_updates()
         st.rerun()
@@ -145,7 +160,7 @@ with st.sidebar:
                 st.write(f"{i+1}. {msg}")
 
 # Основной интерфейс
-col1, col2 = st.columns([2, 1])
+col1, col2 = st.columns([2.5, 3])
 
 with col1:
     st.subheader("История диалога")
@@ -179,12 +194,12 @@ with col2:
                 with st.expander(f"Рекомендация #{i+1}"):
                     st.write(rec)
             else:
-                with st.expander(f"Рекомендация: {rec.get('intent', 'Неизвестно')}"):
-                    st.write(f"**Эмоция:** {rec.get('emotion', 'Неизвестно')}")
-                    st.write("**Действия:**")
-                    for action in rec.get('actions', []):
-                        st.write(f"- {action}")
-                    st.write(f"**Знания:** {rec.get('knowledge', 'Нет данных')}")
+                # Используем реальные поля, которые приходят с бэка
+                with st.expander(f"Рекомендация: {rec.get('intern', 'Неизвестно')}"):
+                    st.write(f"**Эмоция:** {rec.get('emotinal', 'Неизвестно')}")
+                    st.write(f"**Ссылка:** {rec.get('link', 'Нет')}")
+                    st.write(f"**Ответ:** {rec.get('ans', 'Нет')}")
+                    st.write(f"**Знания:** {rec.get('know', 'Нет данных')}")
     else:
         st.info("Рекомендации пока отсутствуют")
 

@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException
-from ..models import MessageRequest, SessionResponse
-from ..schemas import SessionCreate, SessionData, CallbackRequest
+from fastapi import APIRouter, HTTPException, Header
+from ..schemas import MessageRequest, SessionResponse, SessionData
+from ..schemas import SessionCreate, CallbackRequest, Recommendation
 from ..services.message_buffer import MessageBuffer
+from typing import Optional
 
 router = APIRouter()
 message_buffer = MessageBuffer()
 
-@router.post("/sessions", response_model=SessionResponse)
+@router.post("", response_model=SessionResponse)
 async def create_session():
     """Create a new session."""
     try:
@@ -15,7 +16,7 @@ async def create_session():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/sessions/{session_id}/messages")
+@router.post("/{session_id}/messages")
 async def add_message(session_id: str, message: MessageRequest):
     """Add a message to the session."""
     try:
@@ -26,14 +27,14 @@ async def add_message(session_id: str, message: MessageRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/sessions/{session_id}")
+@router.get("/{session_id}")
 async def get_session(session_id: str):
     """Get session data including messages and recommendations."""
     if not message_buffer.session_exists(session_id):
         raise HTTPException(status_code=404, detail="Session not found")
     return message_buffer.get_session_data(session_id)
 
-@router.post("/sessions/{session_id}/complete")
+@router.post("/{session_id}/complete")
 async def complete_session(session_id: str):
     """Complete the session."""
     try:
@@ -45,15 +46,27 @@ async def complete_session(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/callback")
-async def handle_callback(callback: CallbackRequest):
+async def handle_callback(callback: CallbackRequest, x_client_id: Optional[str] = Header(None)):
     """Handle recommendation service callback."""
     try:
-        message_buffer.add_recommendation(callback.session_id, callback.recommendation.dict())
+        if not x_client_id:
+            raise HTTPException(status_code=400, detail="X-Client-ID header is required")
+            
+        session_id = None
+        for sid, session in message_buffer.sessions.items():
+            if session["client_id"] == x_client_id:
+                session_id = sid
+                break
+                
+        if not session_id:
+            raise HTTPException(status_code=404, detail="Session not found for client ID")
+            
+        message_buffer.add_recommendation(session_id, callback.recommendation.dict())
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/sessions/{session_id}/updates", response_model=SessionData)
+@router.get("/{session_id}/updates", response_model=SessionData)
 async def get_updates(session_id: str):
     """Get session updates including messages and recommendations."""
     try:

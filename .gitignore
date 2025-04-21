@@ -5,7 +5,9 @@ __pycache__/
 
 # C extensions
 *.so
+ser
 
+service_orhestrator/
 # Distribution / packaging
 .Python
 build/
