@@ -14,7 +14,7 @@ class MessageBuffer:
             "client_id": None,
             "buffer_timer": None
         })
-        self.BUFFER_TIMEOUT = 5 
+        self.BUFFER_TIMEOUT = 0
         self.agent_client = AgentClient()
 
     def session_exists(self, session_id: str) -> bool:
@@ -61,7 +61,7 @@ class MessageBuffer:
                 )
         else:  
             print(f"Sending operator message to recommendation service: {content}")
-            await self.agent_client.send_operator_message(content)
+            await self._process_operator_message(session_id, content)
 
     async def _process_user_message(self, session_id: str, content: str):
         """Process user message after buffer timeout."""
@@ -71,8 +71,20 @@ class MessageBuffer:
             user_messages = [
                 msg["content"] for msg in session["messages"] if msg["role"] =="user"
             ]
-            full_text = " ".join(user_messages)
+            full_text = user_messages[-1] if user_messages else ""
             await self.agent_client.send_user_message(session["client_id"], full_text)
+        finally:
+            session["buffer_timer"] = None
+    async def _process_operator_message(self, session_id: str, content: str):
+        """Process user message after buffer timeout."""
+        try:
+            await asyncio.sleep(self.BUFFER_TIMEOUT)
+            session = self.sessions[session_id]
+            user_messages = [
+                msg["content"] for msg in session["messages"] if msg["role"] =="operator"
+            ]
+            full_text = user_messages[-1] if user_messages else ""
+            await self.agent_client.send_operator_message(session["client_id"], full_text)
         finally:
             session["buffer_timer"] = None
 

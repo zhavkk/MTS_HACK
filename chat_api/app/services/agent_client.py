@@ -6,8 +6,7 @@ load_dotenv()
 
 class AgentClient:
     def __init__(self):
-        base_url = os.getenv("RECOMMENDATION_SERVICE_URL", "http://service_orhestrator:8008/api/orhestrator")
-        self.base_url = base_url.rstrip('/')
+        self.base_url = "http://orchestrator:8008/api/orhestrator" 
         self.callback_url = os.getenv("CALLBACK_URL", "http://backend:8000/sessions/callback")
         self.debug = os.getenv("DEBUG", "False").lower() == "true"
 
@@ -34,13 +33,13 @@ class AgentClient:
                 if response.status != 200:
                     raise Exception(f"Failed to send user message: {await response.text()}")
 
-    async def send_operator_message(self, text: str) -> None:
+    async def send_operator_message(self, user_id: str, text: str) -> None:
         """Send operator message to recommendation service."""
         async with aiohttp.ClientSession() as session:
             payload = {
                 "content": {
                     "text": text,
-                    "user_id": "operator" 
+                    "user_id": user_id 
                 }
             }
             headers = {

@@ -1,44 +1,119 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  backend:
-    build: ./chat_api
-    ports:
-      - "8000:8000"
-    environment:
-      - PYTHONPATH=/app
-      - RECOMMENDATION_SERVICE_URL=http://service_orhestrator:8008/api/orhestrator/
-      - CALLBACK_URL=http://backend:8000/sessions/callback
-    volumes:
-      - ./chat_api/app:/app/app
-    depends_on:
-      - service_orhestrator
-
-  frontend:
-    build: ./front
-    ports:
-      - "8501:8501"
-    depends_on:
-      - backend
-
-  service_orhestrator:
-    build: ./service_orhestrator
-    ports:
-      - "8008:8008"
-    environment:
-      - DEBUG=True
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    depends_on:
-      - redis
-
+  # ==== Redis ============================================
   redis:
-    image: redis:latest
+    image: redis:7-alpine
+    container_name: redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: ["redis-server", "--appendonly", "yes"]
+
+  # ==== Backend (FastAPI) ===========================================
+  backend:
+    build:
+      context: ./chat_api
+    container_name: backend
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RECOMMENDATION_SERVICE_URL=http://orchestrator:8008/api/orhestrator
+    depends_on:
+      - redis
+      - orchestrator
+
+  # ==== Orchestrator ================================================
+  orchestrator:
+    build:
+      context: ./service_orhestrator
+    container_name: orchestrator
+    ports:
+      - "8008:8008"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - EIA_URL=http://eia:8003/api/eia-agent/analyze
+      - RAG_URL=http://rag:8004/api/rag-agent/search
+      - QSA_URL=http://sqa:8006/api/sqa-agent/summarise  
+      - ASA_URL=http://asa:8005/api/asa-agent/suggest
+      - MAX_USER_LAST_MESSAGE=100
+    depends_on:
+      - redis
+      - eia
+
+  # ==== EIA‑Agent ===================================================
+  eia:
+    build:
+      context: ./eia_agent
+    container_name: eia
+    ports:
+      - "8003:8003"
+    environment:
+    - MWS_API_KEY=sk-KNo006G2a48UVE3IxFlQEQ
+    - REDIS_HOST=redis
+    - REDIS_PORT=6379
+    depends_on:
+      - redis
+
+  # ==== RAG‑Agent ===================================================
+  rag:
+    build:
+      context: ./rag-agent
+    container_name: rag
+    ports:
+      - "8004:8004"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ORCHESTRATOR_URL=http://orchestrator:8008/api/orhestrator/update_intent_emotional
+    depends_on:
+      - redis
+
+  # ==== ASA‑Agent ===================================================
+  asa:
+    build:
+      context: ./asa-agent
+    container_name: asa
+    ports:
+      - "8005:8005"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MWS_API_KEY=sk-KNo006G2a48UVE3IxFlQEQ          # подтягивается из вашего .env
+    depends_on:
+      - redis
+  # ==== SQA-AGNET (Streamlit) ==========================================
+  sqa:
+    build:
+      context: ./SQA-agents
+    container_name: sqa
+    ports:
+      - "8006:8006"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MWS_API_KEY=sk-KNo006G2a48UVE3IxFlQEQ
+    depends_on:
+      - redis
+
+  # ==== Frontend (Streamlit) ==========================================
+  front:
+    build:
+      context: ./front
+    container_name: front
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+      - orchestrator
+      - eia
+      - rag
+      - asa
+    
 
 volumes:
   redis_data:
