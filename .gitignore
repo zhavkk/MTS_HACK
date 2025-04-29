@@ -7,7 +7,7 @@ __pycache__/
 *.so
 ser
 
-service_orhestrator/
+
 # Distribution / packaging
 .Python
 build/
